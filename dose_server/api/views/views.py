@@ -84,17 +84,21 @@ def calculate_insulin(request : rest.request.Request):
         # TConnect
         tconnect = TConnectApi(user.tconnect_email, user.tconnect_password)    
 
-        time_start = arrow.get(now - datetime.timedelta(days=1))
-        time_end = arrow.get(now)
+        utc_time_start = arrow.get(now - datetime.timedelta(days=1))
+        utc_time_end = arrow.get(now)
 
-        tandem_events = download_data.download_tconnect_data(tconnect, time_start, time_end)
-        dexcom_data = download_data.download_dexcom_data(user, time_start, time_end)
+        
 
-        full_data = handle_services.handle_data(tandem_events)
+        tandem_events = download_data.download_tconnect_data(tconnect, utc_time_start, utc_time_end)
+        dexcom_data = download_data.download_dexcom_data(user, utc_time_start, utc_time_end)
 
-        print(dexcom_data)
+        full_data = handle_services.handle_data(tandem_events, dexcom_data)
 
-        return JsonResponse(utility.format_response_dict())
+        last_range = sorted(list(full_data.keys()), key=lambda range_tup: range_tup[1], reverse=True)[0]
+
+        entry_raw = full_data[last_range]
+
+        return JsonResponse(utility.format_response_dict(entry_raw))
         
 
 

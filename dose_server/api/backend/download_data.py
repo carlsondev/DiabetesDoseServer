@@ -40,12 +40,13 @@ dex_client_id = "1bgV6dunaufYB8YwVxtJqVqC5a7ThmYI"
 dex_client_secret = "VRY8PtUOI4fjQaMp"
 
 class DataType(enum.Enum):
-        BOLUS = 1
-        BASEL = 2
-        IOB = 3
-        CGM = 4
-        TREND = 5
-        TREND_RATE = 6
+    BOLUS = 1
+    BASEL = 2
+    IOB = 3
+    CGM = 4
+    TREND = 5
+    TREND_RATE = 6
+    
 
 
 def custom_bolus_parse(bolus_data):
@@ -165,7 +166,9 @@ def refresh_dex_access_code(user : User) -> typing.Optional[str]:
     response_dict = json.loads(response_str)
 
     access_token = response_dict.get("access_token", user.dexcom_access_token)
+    refresh_token = response_dict.get("refresh_token", user.dexcom_refresh_token)
     user.dexcom_access_token = access_token
+    user.dexcom_refresh_token = refresh_token
     user.save()
 
     return access_token
@@ -216,11 +219,11 @@ def download_dexcom_data(user : User, time_start : arrow.Arrow, time_end: arrow.
     return_dict : typing.Dict[arrow.Arrow, typing.Dict[DataType, typing.Any]] = {}
 
     for data_dict in evgs:
-        system_time = data_dict.get("systemTime")
+        system_time = data_dict.get("displayTime")
         if system_time is None:
             continue
         
-        time = arrow.get(system_time)
+        time = arrow.get(system_time, tzinfo=TIMEZONE_NAME)
 
         bg = data_dict.get("value")
         trend_rate = data_dict.get("trendRate")
