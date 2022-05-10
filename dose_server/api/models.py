@@ -1,9 +1,11 @@
 from django.db import models
+from django.contrib.postgres.fields import ArrayField
 import uuid
 from django.contrib.auth.models import BaseUserManager
 import datetime
 import pytz
 import typing
+import datetime
 
 def utc_datetime() -> datetime.datetime:
         now = datetime.datetime.now()
@@ -105,11 +107,11 @@ class DiabetesEntry(models.Model):
     end_datetime = models.DateTimeField()
 
     # Dexcom
-    blood_glucose = models.FloatField(default=0)
+    blood_glucose = models.FloatField(default=0, null=True)
     trend_rate = models.FloatField(default=0, null=True)
     trend = models.TextField(default="none",null=True)
 
-    insulin_on_board = models.FloatField(default=0)
+    insulin_on_board = ArrayField(base_field=models.FloatField(default=0), default=list)
 
     # Bolus
     dosed_insulin = models.FloatField(default=0, null=True)
@@ -129,6 +131,9 @@ class User(models.Model):
         target_bg_duration = models.DurationField(default=datetime.timedelta(minutes=15))
         
         last_login = models.DateTimeField()
+
+        # The last time the data was fetched
+        last_fetched_datetime = models.DateTimeField(auto_now_add=True)
 
         # Api Data
         dexcom_refresh_token = models.TextField(null=True)

@@ -198,6 +198,9 @@ def download_dexcom_data(user : User, time_start : arrow.Arrow, time_end: arrow.
     if res.status == 401:
         # 401, access token expired
         access_token = refresh_dex_access_code(user)
+        if access_token is None:
+            print("Refresh token is invalid, could not get new access token")
+            return None
         headers = {
             'authorization': "Bearer {}".format(access_token)
         }

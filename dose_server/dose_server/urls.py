@@ -33,4 +33,5 @@ urlpatterns = [
     path('register-user', register_views.register_user),
     path('update-credentials', views.update_credentials),
     path('calculate-insulin', views.calculate_insulin),
+    path('get-all-data', views.get_all_data)
 ]
