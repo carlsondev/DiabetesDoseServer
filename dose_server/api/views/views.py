@@ -112,8 +112,10 @@ def get_all_data(request : rest.request.Request):
     utc_time_end = arrow.get(now)
 
 
-    full_data = fetch_all_data(user, user.last_fetched_datetime, utc_time_end)
+    full_data = fetch_all_data(user, arrow.get(user.last_fetched_datetime), utc_time_end)
+    print("Fetched data has {} ranges".format(len(full_data.keys())))
     if full_data != {} and full_data is not None:
+        
         user.last_fetched_datetime = utc_time_end.datetime
         user.save()
 
