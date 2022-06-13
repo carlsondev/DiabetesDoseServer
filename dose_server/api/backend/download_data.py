@@ -1,5 +1,6 @@
 
 import datetime
+import math
 import arrow
 import logging
 import enum
@@ -9,6 +10,7 @@ import typing
 import arrow
 
 from api.models import User
+from api import utility
 
 from tconnectsync.parser.tconnect import TConnectEntry
 from tconnectsync.secret import TIMEZONE_NAME
@@ -63,6 +65,7 @@ def custom_bolus_parse(bolus_data):
         req_time = bolus_dict.get("RequestDateTime")
         comp_time = bolus_dict.get("CompletionDateTime")
         target_bg = bolus_dict.get("TargetBG")
+        desc = bolus_dict.get("Description")
 
         final_dict["bg"] = bg if bg != '' else None
         final_dict["iob"] = iob if iob != '' else None
@@ -71,11 +74,104 @@ def custom_bolus_parse(bolus_data):
         final_dict["completion_time"] = arrow.get(comp_time, tzinfo=TIMEZONE_NAME) if comp_time != '' else None
         final_dict["target_bg"] = target_bg if target_bg != '' else None
 
+        # Manual or Automatic Correction
+        final_dict["is_manual"] = True if "Standard" in desc else False
+
+        # Skip
+        if final_dict["completion_time"] == None:
+            continue
+
         final_return_data.append(final_dict)
 
     return final_return_data
 
-def download_tconnect_data(tconnect, time_start, time_end, features=DEFAULT_FEATURES):
+def download_tconnect_csv(tconnect, time_start : arrow.Arrow, time_end : arrow.Arrow):
+    tconnect.ws2.MAX_RETRIES = 0 # If it fails, it won't succeed again
+
+    csvdata : typing.Optional[typing.Dict[str, typing.Any]] = None
+
+    full_time_delta : datetime.timedelta = time_end - time_start
+    try:
+          csvdata = tconnect.ws2.therapy_timeline_csv(time_start, time_end) 
+          return csvdata
+    except ApiException as e:
+        if e.status_code == 500:
+            # Failed first time, Run algorithm
+            print("First range failed, finding sitable day range to fulfill request")
+            while csvdata is None:
+                new_days = full_time_delta.days // 2
+                new_time_start = time_start.shift(days=-new_days)
+                try:
+                    csvdata = tconnect.ws2.therapy_timeline_csv(new_time_start, time_end)  
+                except ApiException as e:
+                    if e.status_code == 500:
+                        print("New range of {} days failed, retrying".format(new_days))
+                        csvdata = None
+
+            # Found valid range, run entire request, sliced up with these ranges
+            print("Found valid range of {} days".format(new_days))
+            valid_range_seconds = new_days * 24 * 60 * 60
+
+            full_range_count = math.floor(full_time_delta.seconds / valid_range_seconds) # Highest resolution
+
+            start_end_times : typing.List[typing.Tuple[arrow.Arrow, arrow.Arrow]] = [] # Tuple (startTime, endTime)
+
+            # Append ranges
+            current_start_time = time_start
+            for i in range(full_range_count):
+                end_time = current_start_time.shift(seconds=valid_range_seconds)
+                start_end_times.append((current_start_time, end_time))
+                current_start_time = end_time
+
+
+            # Append remainder
+            start_end_times.append((current_start_time, time_end))
+
+            # Fetch data for ranges
+            print("Starting to fetch multiple ranges data: {}".format(utility.utc_datetime().isoformat(timespec="seconds")))
+            range_dicts : typing.List[typing.Dict[str, typing.Any]] = []
+            for range_tup in start_end_times:
+                range_data = download_tconnect_csv(tconnect, range_tup[0], range_tup[1])
+
+                range_dicts.append(range_data)
+
+            print("Finished fetching multiple ranges data: {}".format(utility.utc_datetime().isoformat(timespec="seconds")))
+            final_dict : typing.Dict[str, typing.Any] = {
+                "readingData": [],
+                "iobData": [],
+                "basalData": [],
+                "bolusData": []
+            }
+            for range_dict in range_dicts:
+                reading_data = range_dict.get("readingData")
+                if reading_data is not None:
+                    final_dict["readingData"] += reading_data
+
+                iob_data = range_dict.get("iobData")
+                if iob_data is not None:
+                    final_dict["iobData"] += iob_data
+                    
+                basel_data = range_dict.get("basalData")
+                if basel_data is not None:
+                    final_dict["basalData"] += basel_data
+
+                bolus_data = range_dict.get("bolusData")
+                if bolus_data is not None:
+                    final_dict["bolusData"] += bolus_data
+
+            return final_dict
+            
+        print("Other API Exception: {}".format(e))
+
+def handle_bolus_data(bolus_csv_data : typing.List[typing.Dict[str, typing.Any]]):
+
+    # Bullshit hack around api
+    bolus_data = [bolus_dict for bolus_dict in bolus_csv_data if bolus_dict.get('CompletionDateTime') != '' and bolus_dict.get('CompletionDateTime') is not None]
+
+    return process_bolus_events(bolus_data)
+
+
+def download_tconnect_data(tconnect, time_start : arrow.Arrow, time_end : arrow.Arrow, features=DEFAULT_FEATURES):
     print("Downloading t:connect ControlIQ data")
     try:
         ciqTherapyTimelineData = tconnect.controliq.therapy_timeline(time_start, time_end)
@@ -90,7 +186,9 @@ def download_tconnect_data(tconnect, time_start, time_end, features=DEFAULT_FEAT
             raise e
 
     print("Downloading t:connect CSV data")
-    csvdata = tconnect.ws2.therapy_timeline_csv(time_start, time_end)
+    tconnect.ws2.MAX_RETRIES = 0 # If it fails, it won't succeed again
+
+    csvdata = download_tconnect_csv(tconnect, time_start, time_end)
 
     readingData = csvdata["readingData"]
     iobData = csvdata["iobData"]
@@ -107,7 +205,12 @@ def download_tconnect_data(tconnect, time_start, time_end, features=DEFAULT_FEAT
 
     added = 0
 
-    cgmData = process_cgm_events(readingData)
+    cgmData = []
+    try:
+        cgmData = process_cgm_events(readingData)
+    except:
+        print("No Tandem CGM data avilable for Range")
+        pass
 
     if BASAL in features:
         basalEvents = process_ciq_basal_events(ciqTherapyTimelineData)
@@ -131,7 +234,7 @@ def download_tconnect_data(tconnect, time_start, time_end, features=DEFAULT_FEAT
 
 
     if BOLUS in features:
-        bolusEvents = process_bolus_events(bolusData)
+        bolusEvents = handle_bolus_data(bolusData)
 
     if len(iobData) > 0:
         iobEvents = process_iob_events(iobData)

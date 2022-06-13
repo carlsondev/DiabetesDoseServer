@@ -117,6 +117,13 @@ class DiabetesEntry(models.Model):
     dosed_insulin = models.FloatField(default=0, null=True)
     dose_completion_time = models.DateTimeField(null=True)
     dose_target_bg = models.FloatField(default=0, null=True)
+    is_manual_bolus = models.BooleanField(default=True, null=True)
+
+    # Basel
+    basel_time = models.DateTimeField(null=True)
+    basel_delivery_type = models.TextField(null=True)
+    basel_duration = models.FloatField(default=0, null=True)
+    basel_rate = models.FloatField(default=0, null=True)
 
 
 # Create your models here.
@@ -134,6 +141,8 @@ class User(models.Model):
 
         # The last time the data was fetched
         last_fetched_datetime = models.DateTimeField(auto_now_add=True)
+
+        current_user_timezone = models.TextField()
 
         # Api Data
         dexcom_refresh_token = models.TextField(null=True)
