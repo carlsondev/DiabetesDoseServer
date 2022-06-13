@@ -31,3 +31,4 @@ class EntrySerializer(ApiSerializer):
         dosed_insulin = serializers.FloatField()
         dose_completion_time = serializers.DateTimeField()
         dose_target_bg = serializers.FloatField()
+        is_manual_bolus = serializers.BooleanField()

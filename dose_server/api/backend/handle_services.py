@@ -191,7 +191,7 @@ def handle_data(tandem_events, dexcom_events):
 
     full_data = {}
     print("Starting to Handle Data")
-    if len(dexcom_events) > 0:
+    if dexcom_events is not None and len(dexcom_events) > 0:
         print("Dexcom Events Exist, using them to fill")
         dex_keys = sorted(list(dexcom_events.keys()))
         for dex_key_idx in range(len(dex_keys)):
@@ -268,22 +268,24 @@ def handle_data(tandem_events, dexcom_events):
         iob = bolus_dict["iob"]
         insulin = float(bolus_dict["insulin"])
         comp_time = bolus_dict["completion_time"]
+        is_manual = bolus_dict["is_manual"]
         target_bg = float(bolus_dict["target_bg"])
 
-        cgm_range = range_containing_datetime(bolus_ranges, comp_time)
-        if cgm_range is None:
+        bolus_range = range_containing_datetime(bolus_ranges, comp_time)
+        if bolus_range is None:
             print("No corresponding BG found")
             continue
 
-        bolus_ranges.remove(cgm_range)
+        bolus_ranges.remove(bolus_range)
 
         if iob is not None:
-            full_data[cgm_range]["iob"] = [float(iob)]
-        full_data[cgm_range]["insulin"] = insulin
-        full_data[cgm_range]["completion_time"] = comp_time
-        full_data[cgm_range]["target_bg"] = target_bg
+            full_data[bolus_range]["iob"] = [float(iob)]
+        full_data[bolus_range]["insulin"] = insulin
+        full_data[bolus_range]["completion_time"] = comp_time
+        full_data[bolus_range]["target_bg"] = target_bg
+        full_data[bolus_range]["is_manual"] = is_manual
 
-    print("Finsihed parsing BOLUS data: {}".format(utility.utc_datetime().isoformat(timespec="seconds")))
+    print("Finished parsing BOLUS data: {}".format(utility.utc_datetime().isoformat(timespec="seconds")))
     # Parse Insulin-on-Board
     iob_ranges = list(full_data.keys())
     iob_ranges = sorted(iob_ranges, key=lambda range_tup: range_tup[0])

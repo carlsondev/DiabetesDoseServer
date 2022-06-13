@@ -1,3 +1,4 @@
+import imp
 import uuid
 import pytz
 
@@ -21,6 +22,7 @@ import arrow
 import typing
 
 from tconnectsync.secret import TIMEZONE_NAME
+from tconnectsync import secret
 
 from tconnectsync.api import TConnectApi
 
@@ -54,7 +56,7 @@ def update_credentials(request : rest.request.Request):
 
 def fetch_all_data(user : models.User, utc_time_start : arrow.Arrow, utc_time_end : arrow.Arrow) -> typing.Dict[typing.Tuple[arrow.Arrow], typing.Dict[str, typing.Any]]:
         # Start Data Downloads
-
+        secret.TIMEZONE_NAME = user.current_user_timezone
         # TConnect
         tconnect = TConnectApi(user.tconnect_email, user.tconnect_password)    
 
@@ -62,6 +64,8 @@ def fetch_all_data(user : models.User, utc_time_start : arrow.Arrow, utc_time_en
         dexcom_data = download_data.download_dexcom_data(user, utc_time_start, utc_time_end)
 
         full_data = handle_services.handle_data(tandem_events, dexcom_data)
+
+        
 
         return full_data
 
@@ -83,6 +87,7 @@ def save_data_to_database(user : models.User, full_data : typing.Dict[typing.Tup
 
         entry.dosed_insulin = entry_dict.get("insulin")
         entry.dose_target_bg = entry_dict.get("target_bg")
+        entry.is_manual_bolus = entry_dict.get("is_manual")
 
         comp_time : arrow.Arrow = entry_dict.get("completion_time")
         if comp_time is not None:
@@ -112,7 +117,7 @@ def get_all_data(request : rest.request.Request):
     utc_time_end = arrow.get(now)
 
 
-    full_data = fetch_all_data(user, arrow.get(user.last_fetched_datetime), utc_time_end)
+    full_data = fetch_all_data(user, arrow.get(user.last_fetched_datetime - datetime.timedelta(days=2)), utc_time_end)
     print("Fetched data has {} ranges".format(len(full_data.keys())))
     if full_data != {} and full_data is not None:
         
@@ -128,7 +133,7 @@ def get_all_data(request : rest.request.Request):
         last_fetched_datetime = arrow.get(last_fetched_datetime_str).datetime
         all_entries = all_entries.filter(start_datetime__gte=last_fetched_datetime)
 
-    entries_json_list = model_serializers.EntrySerializer(all_entries, many=True).data
+    entries_json_list = model_serializers.EntrySerializer(all_entries, many=True).data # This is where the requests timeout
 
     return JsonResponse(utility.format_response_dict({"data" : entries_json_list}))
     
@@ -176,7 +181,19 @@ def calculate_insulin(request : rest.request.Request):
         return JsonResponse(utility.format_response_dict({}))
         
 
+@api_view(['POST'])
+def update_user_settings(request : rest.request.Request):
 
+        user : models.User = request.user.user 
+        request_dict = rest.parsers.JSONParser().parse(request)
+
+        timezone = request_dict.get("user_timezone")
+        if timezone is not None:
+            user.current_user_timezone = timezone
+
+        user.save()
+
+        return JsonResponse(utility.format_response_dict({}))
 
 
 
